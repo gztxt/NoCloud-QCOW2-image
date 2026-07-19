@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-QCOW_URL="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-nocloud-amd64.qcow2"
+QCOW_URL="https://mirror.nju.edu.cn/debian-cdimage/cloud/trixie/20260501-2465/debian-13-nocloud-amd64-20260501-2465.qcow2"
 QCOW_IMG="debian-13-nocloud-amd64.qcow2"
 ROOT_PASSWORD="root"
 OUTPUT_DIR="release"
