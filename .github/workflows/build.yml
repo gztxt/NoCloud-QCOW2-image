@@ -1,57 +1,40 @@
 name: Build Custom Debian QCOW2
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'build.sh'
+      - 'scripts/**'
+      - '.github/workflows/build.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    
+    name: Build QCOW2
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          docker-images: true
-          swap-storage: false
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -qq -y libguestfs-tools qemu-utils wget curl linux-image-generic
+          sudo apt-get update
+          sudo apt-get install -y libguestfs-tools qemu-utils
 
-      - name: Build QCOW2 Image
-        env:
-          LIBGUESTFS_BACKEND: direct
-        run: |
-          sudo -E bash build.sh
-          # Compress to bypass GitHub's 2GB file limit
-          sudo xz -v -T0 release/debian-13-nocloud-amd64.qcow2
-          
-      - name: Extract Date and Time for Release
-        id: time
-        run: echo "date=$(date +'%Y-%m-%d-%H-%M')" >> $GITHUB_OUTPUT
-          
-      - name: Create Release and Upload Asset
-        uses: softprops/action-gh-release@v2
+      - name: Make build script executable
+        run: chmod +x build.sh
+
+      - name: Run build
+        run: ./build.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "v${{ steps.time.outputs.date }}"
-          name: "Debian 13 NVMe/NoCloud Vibecoding Edition (${{ steps.time.outputs.date }})"
-          files: release/debian-13-nocloud-amd64.qcow2.xz
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: debian-13-nocloud-qcow2
+          path: release/*.qcow2
+          retention-days: 7
