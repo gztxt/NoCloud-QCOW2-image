@@ -41,6 +41,16 @@ jobs:
       # ⚠ 这一行曾被本地 9fa67de 误删过 —— 它与 supermin 失败**无关**，
       # 删掉不会修好任何问题，只会让 virt-customize 换个失败方式。
       LIBGUESTFS_BACKEND: direct
+      # ── 诊断用（2026-10-09 加）────────────────────────────────────────────
+      # 为什么加：supmin 失败时日志**只有一句** `supermin exited with error
+      # status 1`，不带任何内层原因 ⇒ 每次都得猜。这两个变量是 libguestfs
+      # 官方给的调试开关，打开后 supermin/qemu 会把真实失败点打进日志。
+      # 为什么暂时留着：CI 侧的真实失败原因**至今未确定**（本机复现出来的
+      # 是 trim 包覆盖 libstdc++ 导致软链悬空，那是 NAS 厂商包特有的问题，
+      # GitHub runner 上不存在，不能拿来解释 CI 的失败）。
+      # 定位完成后应把这两行删掉 —— 它们会让日志膨胀到数千行。
+      LIBGUESTFS_DEBUG: 1
+      LIBGUESTFS_TRACE: 1
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
