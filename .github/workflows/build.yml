@@ -1,40 +1,97 @@
 name: Build Custom Debian QCOW2
 
+# 2026-10-09 收敛（方案 A，用户裁定）：**本仓是 QCOW2 构建的唯一归属**。
+# 主仓 gztxt/technical-docs 里那份同名 workflow 已删除 —— 它跑在 technical-docs
+# 仓，而那个仓的 .gitignore 第 7 行 `*/` 把 NoCloud-QCOW2-image/ 整个挡住
+#（git ls-files 恒为 0），于是它一被唤醒就必然报
+# 「No such file or directory」：working-directory 在 runner 上不存在。
+# 那份的 paths: 过滤写的是子仓目录路径，而主仓里该路径下无任何被跟踪文件
+# ⇒ 过滤形同虚设，只能被 workflow 文件自身的改动唤醒，而一唤醒就必失败。
+#
+# 本文件 = base取 origin/master 版（Release 发布能力），叠加 origin/main 版
+# （=本地 9fa67de）的 paths: 过滤 / runner / timeout，并**补回**后者误删的
+# LIBGUESTFS_BACKEND: direct。两版不是版本新旧，是两个不同设计，详见
+# 技术文档/PENDING-TASKS.md PT-20261008-16。
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+    # 只在构建输入真的变了时才跑：改 README / 文档不该烧 20 分钟构建。
+    # ⚠ 分支名是 main —— 本 workflow 只监听 main，**推 master 不触发**
+    #（远端默认分支是 master，两者不一致是既存事实，动它之前先想清楚）。
     paths:
       - 'build.sh'
       - 'scripts/**'
       - '.github/workflows/build.yml'
+  workflow_dispatch:
 
+# contents: write 是建 Release 所必需（挂资产）。
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     name: Build QCOW2
     runs-on: ubuntu-latest
+    # 构建实测约 10~20 分钟（含 391MB 镜像下载 + virt-customize + xz 压缩）。
+    # 60 分钟仍算宽裕；无上限时一旦 supermin 挂死会白烧到 GitHub 默认 6 小时。
     timeout-minutes: 60
+    env:
+      # direct 后端绕开 libvirt（ubuntu runner 上没有 libvirt daemon）。
+      # ⚠ 这一行曾被本地 9fa67de 误删过 —— 它与 supermin 失败**无关**，
+      # 删掉不会修好任何问题，只会让 virt-customize 换个失败方式。
+      LIBGUESTFS_BACKEND: direct
     steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libguestfs-tools qemu-utils
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y libguestfs-tools qemu-utils wget curl linux-image-generic
 
-      - name: Make build script executable
-        run: chmod +x build.sh
+      - name: Build QCOW2 Image
+        run: |
+          chmod +x build.sh
+          ./build.sh
+          # 压缩的理由**不是**「绕过 2GB 限制」（391MB 本来就没超，那是 2026-07
+          # 写下这段注释时的误判），而是下载体验：qcow2 里大量零簇与未用扇区。
+          # 产物名 .qcow2.xz 与 GITHUB-ACTIONS-构建指南.md:5 承诺的一致。
+          sudo xz -v -T0 release/debian-13-nocloud-amd64.qcow2
 
-      - name: Run build
-        run: ./build.sh
-
+      # 两条发布路径并存是刻意的：
+      #   · artifact ＝当次运行的快速取用（30 天，不本地 build 时的兜底）；
+      #   · Release   ＝长期落地，构建指南第 4 步「取产物」承诺的就是它。
+      # 成本只是同一份 .xz 多传一次，不重复构建。
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: debian-13-nocloud-qcow2
-          path: release/*.qcow2
-          retention-days: 7
+          path: release/debian-13-nocloud-amd64.qcow2.xz
+          retention-days: 30
+
+      - name: Extract Date and Time for Release
+        id: time
+        run: echo "date=$(date +'%Y-%m-%d-%H-%M')" >> $GITHUB_OUTPUT
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.time.outputs.date }}"
+          name: "Debian 13 NVMe/NoCloud Vibecoding Edition (${{ steps.time.outputs.date }})"
+          files: release/debian-13-nocloud-amd64.qcow2.xz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
